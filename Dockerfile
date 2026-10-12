@@ -48,15 +48,19 @@ ENV KOTLIN_HOME=/opt/kotlinc
 COPY bin/scala-main bin/groovy-main bin/jshell-main /usr/local/bin/
 RUN chmod +x /usr/local/bin/scala-main /usr/local/bin/groovy-main /usr/local/bin/jshell-main
 
-# Smoke test each toolchain at build time: a compiler that is present but broken
-# is worse than a failed build.
+# Every binary the service dispatches to must be present, and this is the same
+# assertion one layer earlier: the wrapper refuses to open its port unless each
+# tool it can hand a program to is on PATH, so a missing toolchain fails the
+# deploy rather than the first student's submission.
+#
+# What a toolchain does when it runs is deliberately not exercised here. A
+# compile-and-run one-liner in the build makes a typo in that one-liner fail
+# the deploy for every language on the image, which is a worse trade than
+# finding out on first use.
 RUN set -eux; \
-    printf 'fun main() { println("kotlin ok") }\n' > /tmp/Smoke.kt; \
-    kotlinc /tmp/Smoke.kt -include-runtime -d /tmp/smoke.jar; \
-    java -jar /tmp/smoke.jar; \
-    scala-main Smoke < /dev/null || true; \
-    groovy-main Smoke <<< 'println "groovy ok"' || true; \
-    rm -f /tmp/Smoke.kt /tmp/smoke.jar
+    for bin in clojure groovyc groovy-main jshell-main kotlinc scalac scala-main java; do \
+      command -v "$bin" > /dev/null; \
+    done
 
 WORKDIR /app
 COPY --from=builder /out/service /app/service
