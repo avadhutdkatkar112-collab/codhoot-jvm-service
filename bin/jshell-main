@@ -1,0 +1,52 @@
+#!/bin/sh
+# Runs a JShell snippet non-interactively.
+#
+# JShell is a REPL, so handing it a script file is not enough: after the script
+# finishes it drops into its interactive prompt and reads stdin. The runner keeps
+# the stdin pipe open for the program's own input, so jshell blocks there until
+# the execute timeout fires and the run is reported as "Time Limit Exceeded" even
+# though the program printed its output correctly.
+#
+# Redirecting stdin from /dev/null gives it the EOF it is waiting for, so it
+# exits as soon as the script is done. -s selects silent feedback; -q would still
+# print the `jshell>` prompt, and the two cannot be combined because -q, -s, -v
+# and --feedback are mutually exclusive feedback options.
+#
+# The -J options below are what make the run work inside the sandbox at all.
+# java.util.prefs is backed by files under $HOME, and the execution container runs
+# with a read-only root filesystem: the first prefs write cannot create or lock
+# java.util.prefs.systemRoot, the Preferences class fails to initialise, and jshell
+# then blocks on its prompt instead of running the script — the same wall the
+# stdin redirect above fixes, reached by a different route. Pointing both roots at
+# the writable tmpfs keeps prefs off the read-only filesystem.
+#
+#   java.io.tmpdir  jshell's scratch space, which the read-only root would
+#                   otherwise deny
+#   userRoot        java.util.prefs.userRoot, so preferences land in the tmpfs
+#
+# -R passes a flag through to the remote JVM, which is how -D reaches it. The
+# flags are also applied to the launcher JVM itself (-J) because the Preferences
+# class it initialises is the same one that fails.
+#
+# The snippet is copied to the tmpfs with "/exit" appended. JShell runs a script
+# file and then *enters its REPL*, which prints a "->" prompt to stdout: the
+# program's output is correct but the trailing prompt is not, and any comparison
+# against expected output sees it as part of the result. No feedback flag removes
+# it — -s leaves the prompt, -q prints its own, and -q with --feedback silent
+# discards the program's output too. Ending the session inside the script is the
+# only way to get stdout to hold exactly what the program printed. The copy lives
+# in the tmpfs because the workspace is read-only during execution.
+set -e
+
+PREFS_DIR="${TMPDIR:-/tmp}/.codhoot-jshell"
+mkdir -p "$PREFS_DIR"
+SNIPPET="$PREFS_DIR/snippet.jsh"
+cat "$1" > "$SNIPPET"
+echo '/exit' >> "$SNIPPET"
+
+exec jshell \
+  -J-Djava.io.tmpdir="$PREFS_DIR" \
+  -J-Djava.util.prefs.userRoot="$PREFS_DIR/prefs" \
+  -R-Djava.io.tmpdir="$PREFS_DIR" \
+  -R-Djava.util.prefs.userRoot="$PREFS_DIR/prefs" \
+  -s "$SNIPPET" < /dev/null

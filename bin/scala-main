@@ -1,0 +1,14 @@
+#!/bin/sh
+# Runs a compiled Scala object with the Scala standard library on the classpath.
+#
+# The `scala` launcher cannot be used inside the sandbox: it resolves the
+# container hostname, which fails under --network=none. The library jar is
+# resolved at run time rather than baked in, so a Debian package bump does not
+# leave a stale path in this script.
+set -e
+SCALA_LIB=$(ls /usr/share/java/scala-library*.jar 2>/dev/null | head -1)
+if [ -z "$SCALA_LIB" ]; then
+    echo "scala standard library not found in this image" >&2
+    exit 127
+fi
+exec java -cp "$PWD:$SCALA_LIB" "$@"

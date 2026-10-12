@@ -1,0 +1,12 @@
+#!/bin/sh
+# Runs a Groovy-compiled class with the Groovy runtime on the classpath.
+#
+# groovyc emits plain .class files that need groovy-all.jar at run time; without
+# it the JVM reports NoClassDefFoundError: groovy/lang/Script.
+set -e
+GROOVY_LIB=$(ls /usr/share/java/groovy-all*.jar 2>/dev/null | head -1)
+if [ -z "$GROOVY_LIB" ]; then
+    echo "groovy runtime not found in this image" >&2
+    exit 127
+fi
+exec java -cp "$PWD:$GROOVY_LIB" "$@"
